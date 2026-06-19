@@ -1,0 +1,34 @@
+
+# --- core ---
+
+pip install torch==2.2.0 torchvision==0.17.0 torchaudio==2.2.0 --index-url https://download.pytorch.org/whl/cu121
+
+pip install numpy==1.26.4
+
+pip install matplotlib==3.8.2
+
+pip install pillow==12.2.0
+
+pip install tqdm==4.67.3
+
+# --- CLIP backbones ---
+
+pip install --no-cache-dir openai-clip==1.0.1
+
+pip install open-clip-torch==3.2.0
+
+pip install timm==1.0.26
+
+pip install ftfy==6.3.1
+
+pip install regex==2026.4.4
+
+pip install huggingface-hub==1.10.1
+
+pip install click
+
+pip install typer
+
+# --- only needed for the ImageNet-1k dataset path ---
+
+pip install datasets
