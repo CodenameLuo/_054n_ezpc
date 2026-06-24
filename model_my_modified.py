@@ -68,9 +68,14 @@ class EZPC(torch.nn.Module):
         self.A.copy_( self.A / (self.A.norm(dim=0, keepdim=True) + 1e-8) )
 
     def forward(
-        self, 
-        vx, 
-        ty
+        self,
+        vx,
+        ty,
+        # y：本批样本的真实标签，形状 (B,)，交给 F.cross_entropy 当目标
+        # 本方案只在 seen 类列上做 CE，故 y 是「seen 局部下标」0..K_seen-1（不是全局类 id）
+        # 例：CIFAR-100 共 100 类、其中 80 个 seen → ty 只传这 80 个 seen 类名嵌入，y∈0..79
+        #     全局→局部的重映射在 train.py 里用 seen_map 做好后才传进来（与 test.py 受限口径一致）
+        y
     ):
         # 匹配损失 L_match（论文式(3)）= MSE(A, Φ)，其中 Φ = concept_matrix.T（固定锚）
         # 把 A 往 Φ 上拽，保证各列始终贴近已知概念方向、维持可解释性
@@ -78,39 +83,33 @@ class EZPC(torch.nn.Module):
         # L_match = A - Φ
         matching_loss = F.mse_loss(self.A, self.concept_matrix.T)
 
-        # CLIP 原始分布：softmax(v_x Tᵀ)
-        # 
-        # vx = v_x 图像嵌入 (B, d)
-        # ty =   T 类名嵌入 (K, d)
-        # 二者上游都已 L2 归一化
-        # 
-        # vx @ ty.T = (B, K) 即 CLIP 的图文相似度 logits
-        clip_probs = F.softmax(
-            input=vx @ ty.T, 
-            dim=1
-        )
-
-        # EZPC（概念瓶颈）分布：logits = v_x A Aᵀ Tᵀ
+        # EZPC（概念瓶颈）分布的 logits = v_x A Aᵀ Tᵀ，形状 (B, K_seen)
         # 等价于 (v_x A)·(t_k A) = ⟨c_x, c_k⟩ = Σ_j c_x[j]·c_k[j]（论文式(8)，推理取 argmax 即式(6)）
         # 几何上：A Aᵀ 是秩≤m 的半正定度量，把打分瓶颈到 m 个单位范数概念方向上
         # （c_x=v_x A、c_k=t_k A 是图像/类名的概念激活；逐概念乘积 c_x⊙c_k 即式(7) 的 s_{x,k}）
+        # vx = v_x 图像嵌入 (B, d)、ty = seen 类名嵌入 (K_seen, d)，二者上游均已 L2 归一化
+        # 注意：本方案 ty 只含 seen 类（train.py 已切片），故列空间是 seen 子集、不含 unseen 列
         ezpc_logits = (vx @ self.A @ self.A.T @ ty.T)
-        ezpc_log_probs = F.log_softmax(ezpc_logits, dim=1)
 
-        # 重构损失 L_recon：用 KL 散度让 EZPC 分布对齐 CLIP 分布，保住 CLIP 的相似度结构
-        # ⚠️ 方向提醒：F.kl_div(input=log Q, target=P) 实算 Σ P·(logP−logQ) = KL(P‖Q)
-        #    这里 input=ezpc_log_probs=log(EZPC)=log Q，target=clip_probs=CLIP=P
-        #    故代码实际算的是 KL(CLIP ‖ EZPC)（以 CLIP 为参考分布）
-        #    —— 论文式(4) 写的是 KL(EZPC ‖ CLIP)，方向正好相反（代码与 test.py 内部一致，但与式(4) 反向）
-        # reduction='batchmean'：对 batch 求和再除以 batch 大小 = 每样本平均 KL（对应式(4) 的 1/B）
-        reconstruction_loss = F.kl_div(
-            ezpc_log_probs,
-            clip_probs,
-            reduction='batchmean'
-        )
+        # —————————— 改动点：重构损失(KL) → 监督损失(交叉熵) ——————————
+        # 原 L_recon = KL(EZPC ‖ CLIP)：把 EZPC 分布往 CLIP 零样本分布上拽
+        #   目标是 CLIP 自己 → EZPC 的天花板就是 CLIP，准确率追不过原始 CLIP 零样本
+        # 现 L_ce   = CE(EZPC_logits, y)：直接把 EZPC 分布往真实标签上拽
+        #   监督信号来自真标签 → 摆脱 CLIP 天花板，用标签把精度往上抬
+        #
+        # F.cross_entropy 内部自带 log_softmax，传「原始 logits」即可，别先 softmax
+        # ezpc_logits 是 (B, K_seen)、y 是 seen 局部下标 0..K_seen-1，二者列对齐
+        # 例：某图 seen 局部下标是 3 → 期望第 3 列 logit 最大；CE = −log softmax(ezpc_logits)[行,3]
+        #
+        # 为什么只在 seen 列上做（本方案的选择）：本仓库是广义零样本设定，训练只覆盖 seen 类。
+        #   若把全 100 类一起喂 CE，unseen 列永远是「错答案」、会被一路压低 → seen 精度↑但 unseen 泛化↓。
+        #   这里 ty 只给 seen 列，CE 只在 seen 类之间做区分、根本不碰 unseen 列 → 护住 unseen 的零样本能力。
+        ce_loss = F.cross_entropy(ezpc_logits, y)
 
-        # 总损失 L_total = L_match + λ·L_recon（论文式(5)，λ = self.weight）
-        total_loss = matching_loss + self.weight * reconstruction_loss
+        # 总损失 L_total = L_match + λ·L_ce（λ = self.weight）
+        # 注意：λ 现在平衡的是「匹配锚 A→Φ」与「真标签监督」，语义已不同于原文的「匹配 vs 重构」
+        total_loss = matching_loss + self.weight * ce_loss
 
-        # 返回三个损失；train.py 只对 total_loss 反传，另两个仅 .item() 记录
-        return matching_loss, reconstruction_loss, total_loss
+        # 返回三个损失，位置与原来一致：train.py 按 (matching, ce, total) 解包记录
+        # 中间项现在是 CE 损失（接线后的 train.py 已把变量/打印改成 ce）
+        return matching_loss, ce_loss, total_loss

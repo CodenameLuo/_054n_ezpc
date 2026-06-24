@@ -1,0 +1,23 @@
+CLIP Seen Accuracy: 0.399375
+CLIP Unseen Accuracy: 0.674
+CLIP Generalized Seen Accuracy: 0.37025
+CLIP Generalized Unseen Accuracy: 0.4545
+CLIP Generalized Harmonic Mean: 0.4080718399515004
+EZPC Seen Accuracy: 0.6305
+EZPC Unseen Accuracy: 0.523
+EZPC Generalized Seen Accuracy: 0.622125
+EZPC Generalized Unseen Accuracy: 0.058
+EZPC Generalized Harmonic Mean: 0.1061077007902959
+Fidelity Seen Top1Agree (%): 41.7
+Fidelity Seen Spearman: 0.6052013263702393
+Fidelity Seen Kendall (topk): 0.34999469184875487
+Fidelity Seen KL: 3.356867401123047
+Fidelity Unseen Top1Agree (%): 18.15
+Fidelity Unseen Spearman: 0.5981979217529297
+Fidelity Unseen Kendall (topk): 0.33118203735351565
+Fidelity Unseen KL: 2.598661071777344
+Fidelity All Top1Agree (%): 36.99
+Fidelity All Spearman: 0.6038006454467774
+Fidelity All Kendall (topk): 0.34623216094970705
+Fidelity All KL: 3.2052261352539064
+Fidelity Kendall topk: 50

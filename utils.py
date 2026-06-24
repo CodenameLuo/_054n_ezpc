@@ -103,6 +103,16 @@ def load_train_embeddings(dataset_root, dataset_name, backbone):
     train_embs = F.normalize(train_embs, dim=1)
     return train_embs
 
+def load_train_labels(dataset_root, dataset_name):
+    """Load seen-split training labels (global class ids), row-aligned with load_train_embeddings."""
+    path = f"{dataset_root}/{dataset_name}/embeddings/splits/seen_train_ids.pt"
+    return torch.load(path, weights_only=True).long()
+
+def load_class_split(dataset_root, dataset_name):
+    """Load the seen/unseen class split dict: {'seen_classes': [...], 'unseen_classes': [...]}."""
+    path = f"{dataset_root}/{dataset_name}/embeddings/splits/class_split.pt"
+    return torch.load(path, weights_only=True)
+
 def load_test_embeddings(dataset_root, dataset_name, backbone):
     """Load seen/unseen test embeddings and targets, plus class split info."""
     bname = backbone_to_name(backbone)
@@ -225,18 +235,18 @@ def plot_loss(img_out_folder, matching_loss_list, reconstruction_loss_list, tota
     plt.savefig(f"{img_out_folder}/matching_loss_plot.png")
     plt.close()
 
-    # Plot reconstruction loss
-    plt.plot(epochs, reconstruction_loss_list, label='Reconstruction Loss')
+    # Plot cross-entropy loss
+    plt.plot(epochs, reconstruction_loss_list, label='CE Loss')
 
     # Add in a title and axes labels
-    plt.title('Reconstruction Loss Plot')
+    plt.title('CE Loss Plot')
     plt.xlabel('Epochs')
     plt.ylabel('Loss')
 
     # Save the plot
     plt.legend(loc='best')
     plt.tight_layout()
-    plt.savefig(f"{img_out_folder}/reconstruction_loss_plot.png")
+    plt.savefig(f"{img_out_folder}/ce_loss_plot.png")
     plt.close()
 
 
